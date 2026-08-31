@@ -13,7 +13,7 @@ from launchdeck import adapter, merge, scanner
 from .conftest import listing_text, write_plist
 
 # A plist Apple's parser accepts but Python's expat rejects: the XML comment
-# holds a double hyphen. This is the real com.ryohi.datahub.bible-daily case.
+# holds a double hyphen. Hand-written plists hit this in the wild.
 LENIENT_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>

@@ -30,7 +30,9 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/oh-namgyu/launchdeck"
+Repository = "https://github.com/oh-namgyu/launchdeck"
 Issues = "https://github.com/oh-namgyu/launchdeck/issues"
+Changelog = "https://github.com/oh-namgyu/launchdeck/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ldm = "launchdeck.cli:main"

@@ -19,7 +19,7 @@ def suggest(label: str, known: Sequence[str]) -> List[str]:
     """Return the labels closest to ``label``, best match first.
 
     Fuzzy matching first, then a substring pass so that a short but exact
-    fragment (``viral-scout``) still finds its jobs.
+    fragment (``backup``) still finds its jobs.
     """
     matches = difflib.get_close_matches(
         label, list(known), n=MAX_SUGGESTIONS, cutoff=_CUTOFF

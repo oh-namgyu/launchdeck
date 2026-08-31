@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: py${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The unit suite never invokes launchctl (the subprocess runner is
+        # injectable), so these runners exercise real behaviour safely.
+        include:
+          # macos-latest is arm64, where setup-python has no Python 3.9 build;
+          # macos-13 is the x86_64 runner that does.
+          - os: macos-13
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+
+      - name: Compile
+        run: python -m compileall -q launchdeck
+
+      - name: Test
+        run: python -m pytest tests/ -q
+
+      - name: Smoke the entry point
+        run: |
+          ldm --version
+          ldm --help
