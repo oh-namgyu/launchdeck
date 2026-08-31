@@ -5,9 +5,9 @@
 `~/Library/LaunchAgents`, overlays live state from `launchctl list`, and shows
 one table telling you what is running, idle, failing, or not loaded at all.
 
-> Work in progress. Inspection (`status`, `info`, `logs`), the lifecycle verbs
-> and `install`/`uninstall`/`restore` are here. `doctor` lands in the next
-> stage, and the full README arrives with it.
+> Work in progress. Inspection (`status`, `info`, `logs`), the lifecycle verbs,
+> `install`/`uninstall`/`restore` and `doctor` are here. The full README, with
+> comparisons and packaging notes, arrives with the release.
 
 ```console
 $ ldm status                  # one table: running / idle / failing / unloaded
@@ -71,6 +71,27 @@ One thing `ldm` cannot undo: `launchctl enable`/`disable` writes into a
 root-owned override database, and that row survives the job it belongs to.
 Uninstalling a disabled label says so in its output - re-install it later and
 you will need `ldm enable <label>` before launchd accepts it.
+
+## Checking your setup
+
+```console
+$ ldm doctor           # read-only health check, grouped by what it looked at
+$ ldm doctor --json    # schema v1: findings[] plus a warnings/notices summary
+$ ldm doctor --strict  # exit 1 if anything is a warning (for CI or a cron job)
+```
+
+`doctor` reads and reports; it never repairs, and it exits 0 even when it finds
+problems unless you ask for `--strict`. It looks for seven things:
+
+| check | severity | what it means |
+| --- | --- | --- |
+| leftover files | notice | non-`.plist` files (`*.bak`) launchd ignores |
+| unreadable plists | notice / warning | a notice when `plutil` accepts the file and only the strict XML parser does not; a warning when both reject it |
+| missing programs | warning | the executable in `ProgramArguments` is not on disk (or not on `PATH`), so the job cannot launch |
+| failed runs | warning / notice | the last exit launchd recorded; a `SIGTERM` exit is only a notice, since that is what a deliberate stop looks like |
+| unloaded plists | notice | a plist on disk launchd has not loaded, which may well be on purpose |
+| foreign loads | notice | loaded labels with no plist of yours, e.g. from `/Library/LaunchAgents` or an app registering its own service - reported, never touched |
+| large logs | notice | a declared log file past 10 MB; launchd rotates nothing |
 
 Requires Python >= 3.9 and macOS. Verified on macOS 15 (Darwin 24).
 

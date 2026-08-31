@@ -4,7 +4,7 @@ import json
 import os
 import shlex
 import sys
-from typing import Any, Dict, List, Optional, Sequence, TextIO
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, TextIO
 
 from .model import (
     ActionResult,
@@ -38,6 +38,12 @@ _COLORS = {
 }
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
+
+# Doctor severities get their own two colors.
+_SEVERITY_COLORS = {"warn": "\033[33m", "info": "\033[90m"}
+
+if TYPE_CHECKING:  # pragma: no cover - imported for annotations only
+    from .findings import Finding, Report
 
 HEADERS = ("STATE", "LABEL", "PID", "EXIT", "SCHEDULE", "PLIST")
 
@@ -211,6 +217,59 @@ def render_action(result: ActionResult, as_json: bool = False) -> str:
         payload = {"schema": SCHEMA_VERSION, "result": result.to_dict()}
         return json.dumps(payload, indent=2, ensure_ascii=False)
     return "\n".join("ldm: {0}".format(line) for line in result.lines)
+
+
+def summary_line(report: "Report") -> str:
+    """The closing count line of a doctor run."""
+    return "{0} warning{1}, {2} notice{3} across {4} job{5}".format(
+        report.warnings,
+        "" if report.warnings == 1 else "s",
+        report.notices,
+        "" if report.notices == 1 else "s",
+        report.subjects,
+        "" if report.subjects == 1 else "s",
+    )
+
+
+def _finding_lines(finding: "Finding", color: bool) -> List[str]:
+    """Render one finding as its severity line plus its suggestion line."""
+    prefix = _SEVERITY_COLORS.get(finding.severity, "") if color else ""
+    reset = _RESET if prefix else ""
+    return [
+        "  {0}{1}{2}  {3} - {4}".format(
+            prefix,
+            finding.severity.ljust(4),
+            reset,
+            shorten_path(finding.subject),
+            finding.message,
+        ),
+        "        -> {0}".format(finding.suggestion),
+    ]
+
+
+def render_doctor(
+    report: "Report",
+    as_json: bool = False,
+    stream: Optional[TextIO] = None,
+) -> str:
+    """Render a doctor report grouped by check, or its JSON contract."""
+    if as_json:
+        payload = {"schema": SCHEMA_VERSION}
+        payload.update(report.to_dict())
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    if not report.findings:
+        return "No problems found."
+
+    color = use_color(stream)
+    out: List[str] = []
+    for title, findings in report.grouped():
+        out.append("== {0} ({1}) ==".format(title, len(findings)))
+        for finding in findings:
+            out.extend(_finding_lines(finding, color))
+        out.append("")
+    out.append(summary_line(report))
+    return "\n".join(out)
 
 
 def render_log_section(name: str, path: Optional[str], body: str) -> str:

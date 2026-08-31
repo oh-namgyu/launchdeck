@@ -53,6 +53,16 @@ def write_binary_plist(directory: Any, filename: str, data: Dict[str, Any]) -> s
     return str(path)
 
 
+def listing_text(loaded: Dict[str, Tuple[Any, int]]) -> str:
+    """Render a ``launchctl list`` table from ``{label: (pid, last_exit)}``."""
+    rows = ["PID\tStatus\tLabel"]
+    rows += [
+        "{0}\t{1}\t{2}".format(pid if pid else "-", code, label)
+        for label, (pid, code) in sorted(loaded.items())
+    ]
+    return "\n".join(rows) + "\n"
+
+
 def fake_runner(stdout: str, code: int = 0):
     """Build a launchctl runner that returns canned output."""
 
@@ -136,12 +146,7 @@ class FakeLaunchd:
         return 0, "", ""
 
     def listing(self) -> str:
-        rows = ["PID\tStatus\tLabel"]
-        rows += [
-            "{0}\t{1}\t{2}".format(pid if pid else "-", code, label)
-            for label, (pid, code) in sorted(self.loaded.items())
-        ]
-        return "\n".join(rows) + "\n"
+        return listing_text(self.loaded)
 
     def _bootstrap(self, path: str) -> Tuple[int, str, str]:
         if not os.path.isfile(path):

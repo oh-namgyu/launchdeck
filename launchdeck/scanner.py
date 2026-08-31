@@ -6,7 +6,7 @@ runtime overlay lives in ``merge.py``.
 
 import os
 import plistlib
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .model import STATE_UNKNOWN, STATE_UNLOADED, JobRecord
 
@@ -102,18 +102,30 @@ def _label_from_filename(path: str) -> str:
     return base[: -len(".plist")] if base.endswith(".plist") else base
 
 
+def load_plist(path: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Parse a plist file into ``(data, error)``. Never raises.
+
+    ``error`` carries the parser's own words, which ``doctor`` reports back to
+    the user; ``data`` is None whenever it is set.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = plistlib.load(handle)
+    except Exception as exc:
+        return None, str(exc)
+    if not isinstance(data, dict):
+        return None, "plist root is not a dictionary"
+    return data, None
+
+
 def read_plist(path: str) -> JobRecord:
     """Parse a single plist file into a JobRecord.
 
     Never raises: an unreadable or malformed plist degrades to a record with
     ``state="unknown"`` so one bad file cannot break the whole inventory.
     """
-    try:
-        with open(path, "rb") as handle:
-            data = plistlib.load(handle)
-        if not isinstance(data, dict):
-            raise ValueError("plist root is not a dictionary")
-    except Exception:
+    data, error = load_plist(path)
+    if error is not None or data is None:
         return JobRecord(
             label=_label_from_filename(path),
             plist_path=path,
