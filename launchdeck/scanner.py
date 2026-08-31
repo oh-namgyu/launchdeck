@@ -14,6 +14,9 @@ DEFAULT_AGENTS_DIR = "~/Library/LaunchAgents"
 
 _WEEKDAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
+# Scheduling keys reported verbatim by ``ldm info``, in the order shown.
+SCHEDULE_KEYS = ("StartInterval", "StartCalendarInterval", "KeepAlive", "RunAtLoad")
+
 
 def agents_dir(path: Optional[str] = None) -> str:
     """Resolve the LaunchAgents directory, expanding ``~``."""
@@ -132,6 +135,7 @@ def read_plist(path: str) -> JobRecord:
         stderr_path=stderr_path if isinstance(stderr_path, str) else None,
         state=STATE_UNLOADED,
         program=_program(data),
+        raw_schedule_keys=[key for key in SCHEDULE_KEYS if key in data],
     )
 
 

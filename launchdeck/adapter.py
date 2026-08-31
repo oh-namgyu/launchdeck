@@ -5,6 +5,7 @@ parser lives here. The command runner is injectable so tests never touch the
 real launchd.
 """
 
+import os
 import subprocess
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -12,6 +13,16 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 Runner = Callable[[Sequence[str]], Tuple[int, str, str]]
 
 LAUNCHCTL = "/bin/launchctl"
+
+# The handful of ``launchctl print`` fields worth surfacing in ``ldm info``.
+PRINT_FIELDS = (
+    "state",
+    "last exit code",
+    "last exit reason",
+    "runs",
+    "run interval",
+    "path",
+)
 
 
 class LaunchctlError(RuntimeError):
@@ -89,3 +100,50 @@ def launchctl_list(
 def build_argv(*args: str) -> List[str]:
     """Build a launchctl argv. Kept here so no other module names the binary."""
     return [LAUNCHCTL] + [str(a) for a in args]
+
+
+def gui_target(label: str, uid: Optional[int] = None) -> str:
+    """Build the ``gui/<uid>/<label>`` service target for the current user."""
+    return "gui/{0}/{1}".format(os.getuid() if uid is None else uid, label)
+
+
+def parse_print_output(text: str) -> Dict[str, str]:
+    """Pull the ``PRINT_FIELDS`` out of ``launchctl print`` output.
+
+    The output is a nested brace dump of ``key = value`` lines whose exact
+    shape varies between macOS releases, so anything unrecognized is ignored
+    and only the first occurrence of each known key is kept.
+    """
+    found: Dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if "=" not in stripped or stripped.endswith("{"):
+            continue
+        key, _, value = stripped.partition("=")
+        key = key.strip().lower()
+        if key in PRINT_FIELDS and key not in found:
+            found[key] = value.strip()
+    return found
+
+
+def launchctl_print(
+    label: str,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> Dict[str, str]:
+    """Run ``launchctl print gui/<uid>/<label>`` and return a small summary.
+
+    Read-only. An unloaded job, a missing launchctl or an unexpected output
+    format all yield an empty mapping instead of raising.
+    """
+    run: Runner = runner or subprocess_runner
+    try:
+        code, out, _err = run(build_argv("print", gui_target(label, uid)))
+    except LaunchctlError:
+        return {}
+    if code != 0:
+        return {}
+    try:
+        return parse_print_output(out)
+    except Exception:
+        return {}

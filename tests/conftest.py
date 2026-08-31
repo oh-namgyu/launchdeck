@@ -16,6 +16,26 @@ SAMPLE_LIST_OUTPUT = "\n".join(
 )
 
 
+# Shape of `launchctl print gui/<uid>/<label>` on macOS 15 (Darwin 24).
+SAMPLE_PRINT_OUTPUT = """gui/501/com.example.running = {
+\tactive count = 0
+\tpath = /Users/someone/Library/LaunchAgents/com.example.running.plist
+\ttype = LaunchAgent
+\tstate = not running
+
+\tprogram = /bin/sh
+\targuments = {
+\t\t/bin/sh
+\t\t/tmp/run.sh
+\t}
+
+\truns = 5
+\tlast exit code = 0
+\trun interval = 7200 seconds
+}
+"""
+
+
 def write_plist(directory: Any, filename: str, data: Dict[str, Any]) -> str:
     """Write an XML plist into ``directory`` and return its path."""
     path = directory / filename
@@ -37,6 +57,17 @@ def fake_runner(stdout: str, code: int = 0):
 
     def run(argv: Sequence[str]) -> Tuple[int, str, str]:
         return code, stdout, ""
+
+    return run
+
+
+def fake_launchctl(print_output: str = SAMPLE_PRINT_OUTPUT, print_code: int = 0):
+    """Build a runner answering both ``launchctl list`` and ``launchctl print``."""
+
+    def run(argv: Sequence[str]) -> Tuple[int, str, str]:
+        if len(argv) > 1 and argv[1] == "print":
+            return print_code, print_output, ""
+        return 0, SAMPLE_LIST_OUTPUT, ""
 
     return run
 

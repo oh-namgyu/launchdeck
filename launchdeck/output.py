@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import sys
 from typing import Any, Dict, List, Optional, Sequence, TextIO
 
@@ -119,3 +120,92 @@ def render_status(
     if as_json:
         return render_json(records)
     return render_table(records, color=use_color(stream))
+
+
+def format_size(size: Optional[int]) -> str:
+    """Render a byte count compactly, e.g. ``12 B`` / ``3.4 KB``."""
+    value = float(size or 0)
+    for unit in ("B", "KB", "MB"):
+        if value < 1024:
+            fmt = "{0:.0f} {1}" if unit == "B" else "{0:.1f} {1}"
+            return fmt.format(value, unit)
+        value /= 1024.0
+    return "{0:.1f} GB".format(value)
+
+
+def _state_cell(state: str, color: bool) -> str:
+    """Render ``symbol state``, colored when the terminal allows it."""
+    cell = "{0} {1}".format(STATE_SYMBOL.get(state, "?"), state)
+    prefix = _COLORS.get(state, "") if color else ""
+    return prefix + cell + (_RESET if prefix else "")
+
+
+def _describe_log(entry: Dict[str, Any]) -> str:
+    """One-line summary of a log file: path plus existence and size."""
+    path = entry.get("path")
+    if not path:
+        return "(not set in plist)"
+    if not entry.get("exists"):
+        return "{0} (missing)".format(shorten_path(path))
+    return "{0} ({1})".format(shorten_path(path), format_size(entry.get("size")))
+
+
+def _describe_schedule(detail: Dict[str, Any]) -> str:
+    """Schedule summary followed by the raw plist keys behind it."""
+    summary = detail.get("schedule") or "on-demand"
+    keys = detail.get("raw_schedule_keys") or []
+    return "{0}  [{1}]".format(summary, ", ".join(keys)) if keys else summary
+
+
+def _info_rows(detail: Dict[str, Any], color: bool) -> List[Sequence[str]]:
+    """Build the (name, value) pairs of the detail block."""
+    logs = detail.get("log_files") or {}
+    arguments = detail.get("program_arguments") or []
+    pid = detail.get("pid")
+    last_exit = detail.get("last_exit")
+    return [
+        ("label", detail.get("label", "-")),
+        ("state", _state_cell(detail.get("state", STATE_UNKNOWN), color)),
+        ("pid", str(pid) if pid is not None else "-"),
+        ("last exit", str(last_exit) if last_exit is not None else "-"),
+        ("plist", shorten_path(detail.get("plist_path"))),
+        ("command", " ".join(shlex.quote(a) for a in arguments) or "-"),
+        ("schedule", _describe_schedule(detail)),
+        ("stdout", _describe_log(logs.get("stdout") or {})),
+        ("stderr", _describe_log(logs.get("stderr") or {})),
+    ]
+
+
+def render_info(
+    detail: Dict[str, Any],
+    as_json: bool = False,
+    stream: Optional[TextIO] = None,
+) -> str:
+    """Render one job's detail block, or its ``{"schema": 1, "job": {...}}``."""
+    if as_json:
+        payload = {"schema": SCHEMA_VERSION, "job": detail}
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    rows = _info_rows(detail, use_color(stream))
+    width = max(len(name) for name, _value in rows)
+    out = ["{0}  {1}".format(name.ljust(width), value) for name, value in rows]
+
+    printed = detail.get("launchctl_print") or {}
+    out.append("")
+    out.append("launchctl print:")
+    if printed:
+        key_width = max(len(key) for key in printed)
+        out.extend(
+            "  {0}  {1}".format(key.ljust(key_width), value)
+            for key, value in printed.items()
+        )
+    else:
+        out.append("  (not available - job not loaded, or launchctl said nothing)")
+    return "\n".join(out)
+
+
+def render_log_section(name: str, path: Optional[str], body: str) -> str:
+    """Render one ``== stdout: <path> ==`` block followed by its lines."""
+    shown = shorten_path(path) if path else "(not set in plist)"
+    header = "== {0}: {1} ==".format(name, shown)
+    return "{0}\n{1}".format(header, body) if body else header

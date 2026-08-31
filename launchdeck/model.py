@@ -35,6 +35,7 @@ class JobRecord:
     stderr_path: Optional[str] = None
     state: str = STATE_UNKNOWN
     program: List[str] = field(default_factory=list)
+    raw_schedule_keys: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the stable JSON contract v1 shape for a single job."""

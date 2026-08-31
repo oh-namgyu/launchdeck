@@ -4,15 +4,51 @@ import json
 
 import pytest
 
-from launchdeck import adapter, cli
+from launchdeck import adapter, cli, logs
 
-from .conftest import SAMPLE_LIST_OUTPUT, fake_runner
+from .conftest import fake_launchctl, write_plist
 
 
 @pytest.fixture(autouse=True)
 def no_launchctl(monkeypatch):
     """Guarantee that no test in this module can spawn launchctl."""
-    monkeypatch.setattr(adapter, "subprocess_runner", fake_runner(SAMPLE_LIST_OUTPUT))
+    monkeypatch.setattr(adapter, "subprocess_runner", fake_launchctl())
+
+
+@pytest.fixture
+def log_agents(tmp_path):
+    """A LaunchAgents directory whose jobs point at temporary log files."""
+    out = tmp_path / "job.out"
+    out.write_text("".join("out {0}\n".format(i) for i in range(1, 31)))
+    err = tmp_path / "job.err"
+    err.write_text("boom\n")
+    directory = tmp_path / "agents"
+    directory.mkdir()
+    write_plist(
+        directory,
+        "com.example.logs.plist",
+        {
+            "Label": "com.example.logs",
+            "ProgramArguments": ["/bin/sh", "-c", "echo hi"],
+            "StandardOutPath": str(out),
+            "StandardErrorPath": str(err),
+        },
+    )
+    write_plist(
+        directory,
+        "com.example.halflogs.plist",
+        {
+            "Label": "com.example.halflogs",
+            "ProgramArguments": ["/bin/true"],
+            "StandardOutPath": str(tmp_path / "never-written.out"),
+        },
+    )
+    write_plist(
+        directory,
+        "com.example.nologs.plist",
+        {"Label": "com.example.nologs", "ProgramArguments": ["/bin/true"]},
+    )
+    return directory
 
 
 def test_status_prints_table(agents, capsys):
@@ -56,6 +92,78 @@ def test_version_flag(capsys):
         cli.main(["--version"])
     assert excinfo.value.code == 0
     assert "launchdeck" in capsys.readouterr().out
+
+
+def test_info_prints_a_detail_block(agents, capsys):
+    assert cli.main(["info", "com.example.running", "--dir", str(agents)]) == 0
+    out = capsys.readouterr().out
+    assert "com.example.running" in out
+    assert "/bin/sh /tmp/run.sh" in out
+    assert "launchctl print:" in out
+    assert "last exit code" in out
+
+
+def test_info_json_matches_the_contract(agents, capsys):
+    assert cli.main(["info", "com.example.idle", "--json", "--dir", str(agents)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == 1
+    job = payload["job"]
+    assert job["label"] == "com.example.idle"
+    assert job["program_arguments"] == ["/bin/sh", "/tmp/idle.sh"]
+    assert job["raw_schedule_keys"] == ["StartInterval"]
+    assert set(job["log_files"]["stdout"]) == {"path", "exists", "size"}
+
+
+def test_info_unknown_label_suggests_and_exits_one(agents, capsys):
+    assert cli.main(["info", "com.example.idl", "--dir", str(agents)]) == 1
+    err = capsys.readouterr().err
+    assert "unknown label" in err
+    assert "com.example.idle" in err
+
+
+def test_logs_prints_both_sections(log_agents, capsys):
+    assert cli.main(["logs", "com.example.logs", "--dir", str(log_agents)]) == 0
+    out = capsys.readouterr().out
+    assert "== stdout: " in out and "== stderr: " in out
+    assert "out 30" in out and "boom" in out
+    # The default tail is 20 lines, so the first ten are not shown.
+    assert "out 10\n" not in out
+
+
+def test_logs_line_count_flag(log_agents, capsys):
+    assert cli.main(["logs", "com.example.logs", "-n", "2", "--dir", str(log_agents)]) == 0
+    out = capsys.readouterr().out
+    assert "out 29" in out and "out 30" in out
+    assert "out 28" not in out
+
+
+def test_logs_reports_unset_and_missing_paths(log_agents, capsys):
+    assert cli.main(["logs", "com.example.halflogs", "--dir", str(log_agents)]) == 0
+    out = capsys.readouterr().out
+    assert "(file does not exist yet)" in out
+    assert "== stderr: (not set in plist) ==" in out
+
+
+def test_logs_without_any_path_exits_one(log_agents, capsys):
+    assert cli.main(["logs", "com.example.nologs", "--dir", str(log_agents)]) == 1
+    err = capsys.readouterr().err
+    assert "defines no log paths" in err
+    assert "StandardOutPath" in err
+
+
+def test_logs_unknown_label_exits_one(log_agents, capsys):
+    assert cli.main(["logs", "com.example.log", "--dir", str(log_agents)]) == 1
+    assert "com.example.logs" in capsys.readouterr().err
+
+
+def test_logs_follow_exits_cleanly_on_interrupt(log_agents, monkeypatch, capsys):
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(logs, "follow", interrupt)
+    code = cli.main(["logs", "com.example.logs", "-f", "--dir", str(log_agents)])
+    assert code == 0
+    assert "following" in capsys.readouterr().out
 
 
 def test_error_returns_exit_code_one(agents, monkeypatch, capsys):
