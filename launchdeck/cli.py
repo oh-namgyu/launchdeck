@@ -4,10 +4,22 @@ import argparse
 import sys
 from typing import Callable, Dict, List, Optional, Sequence
 
-from . import __version__, info, logs, merge, output
+from . import __version__, info, lifecycle, logs, merge, output
 
 EXIT_OK = 0
 EXIT_ERROR = 1
+
+# Lifecycle subcommands: name -> help text. The launchd mapping behind each one
+# lives in lifecycle.py.
+LIFECYCLE_HELP = (
+    ("start", "run the job now (its schedule is unchanged)"),
+    ("stop", "send SIGTERM to the running process; the job stays loaded"),
+    ("restart", "stop the running process and run the job again"),
+    ("load", "register the job's plist with launchd"),
+    ("unload", "unregister the job from launchd; the plist stays on disk"),
+    ("enable", "allow the job to be loaded"),
+    ("disable", "refuse to load the job until it is enabled again"),
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="keep printing appended lines until interrupted",
     )
     _add_directory_argument(tail)
+
+    for name, help_text in LIFECYCLE_HELP:
+        action = subparsers.add_parser(name, help=help_text)
+        action.add_argument("label", help="the job's Label")
+        _add_common_arguments(action)
     return parser
 
 
@@ -116,11 +133,23 @@ def _follow(targets: Sequence) -> None:
         print("")
 
 
+def cmd_lifecycle(args: argparse.Namespace) -> int:
+    """Run one lifecycle command (start/stop/.../disable) on one job."""
+    record = lifecycle.resolve(
+        merge.collect(args.directory), args.label, args.directory
+    )
+    result = lifecycle.ACTIONS[args.command](record)
+    text = output.render_action(result, as_json=args.as_json)
+    print(text, file=sys.stdout if result.ok or args.as_json else sys.stderr)
+    return EXIT_OK if result.ok else EXIT_ERROR
+
+
 COMMANDS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "status": cmd_status,
     "info": cmd_info,
     "logs": cmd_logs,
 }
+COMMANDS.update((name, cmd_lifecycle) for name, _help in LIFECYCLE_HELP)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

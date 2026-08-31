@@ -7,6 +7,7 @@ import sys
 from typing import Any, Dict, List, Optional, Sequence, TextIO
 
 from .model import (
+    ActionResult,
     STATE_FAILING,
     STATE_GHOST,
     STATE_IDLE,
@@ -202,6 +203,14 @@ def render_info(
     else:
         out.append("  (not available - job not loaded, or launchctl said nothing)")
     return "\n".join(out)
+
+
+def render_action(result: ActionResult, as_json: bool = False) -> str:
+    """Render a lifecycle outcome: ``ldm: <line>`` per message, or JSON."""
+    if as_json:
+        payload = {"schema": SCHEMA_VERSION, "result": result.to_dict()}
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+    return "\n".join("ldm: {0}".format(line) for line in result.lines)
 
 
 def render_log_section(name: str, path: Optional[str], body: str) -> str:

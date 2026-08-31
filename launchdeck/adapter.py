@@ -1,28 +1,35 @@
-"""The only module that talks to ``launchctl``.
+"""The only module that runs ``launchctl``.
 
-launchctl output differs between macOS releases, so every invocation and every
-parser lives here. The command runner is injectable so tests never touch the
-real launchd.
+launchctl output differs between macOS releases, so every invocation lives
+here and every parser lives in ``parsing`` next door (re-exported below, so
+callers only ever import ``adapter``). The command runner is injectable, which
+is how tests cover all of this without touching the real launchd.
 """
 
 import os
 import subprocess
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from .parsing import (  # noqa: F401  (re-exported as the boundary's API)
+    ERROR_HINTS,
+    PRINT_FIELDS,
+    error_code,
+    parse_disabled_output,
+    parse_error,
+    parse_list_output,
+    parse_print_output,
+    says_disabled,
+)
+
 # A runner takes an argv list and returns (returncode, stdout, stderr).
 Runner = Callable[[Sequence[str]], Tuple[int, str, str]]
 
+# The (returncode, stdout, stderr) triple every lifecycle call returns.
+Completed = Tuple[int, str, str]
+
 LAUNCHCTL = "/bin/launchctl"
 
-# The handful of ``launchctl print`` fields worth surfacing in ``ldm info``.
-PRINT_FIELDS = (
-    "state",
-    "last exit code",
-    "last exit reason",
-    "runs",
-    "run interval",
-    "path",
-)
+TERM_SIGNAL = "SIGTERM"
 
 
 class LaunchctlError(RuntimeError):
@@ -45,38 +52,6 @@ def subprocess_runner(argv: Sequence[str]) -> Tuple[int, str, str]:
         proc.stdout.decode("utf-8", "replace"),
         proc.stderr.decode("utf-8", "replace"),
     )
-
-
-def _to_int(token: str) -> Optional[int]:
-    """Parse a launchctl numeric column; ``-`` and junk become None."""
-    token = token.strip()
-    if not token or token == "-":
-        return None
-    try:
-        return int(token)
-    except ValueError:
-        return None
-
-
-def parse_list_output(text: str) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
-    """Parse ``launchctl list`` output into ``{label: (pid, last_exit)}``.
-
-    The output is a header line followed by tab-separated ``PID Status Label``
-    rows. A ``-`` in the PID column means the job is loaded but not running.
-    Unparsable lines are skipped rather than raising.
-    """
-    jobs: Dict[str, Tuple[Optional[int], Optional[int]]] = {}
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        parts = line.split("\t") if "\t" in line else line.split()
-        if len(parts) < 3:
-            continue
-        pid_token, status_token, label = parts[0], parts[1], parts[2].strip()
-        if not label or label == "Label":
-            continue
-        jobs[label] = (_to_int(pid_token), _to_int(status_token))
-    return jobs
 
 
 def launchctl_list(
@@ -102,28 +77,14 @@ def build_argv(*args: str) -> List[str]:
     return [LAUNCHCTL] + [str(a) for a in args]
 
 
+def gui_domain(uid: Optional[int] = None) -> str:
+    """Build the ``gui/<uid>`` domain target for the current user."""
+    return "gui/{0}".format(os.getuid() if uid is None else uid)
+
+
 def gui_target(label: str, uid: Optional[int] = None) -> str:
     """Build the ``gui/<uid>/<label>`` service target for the current user."""
-    return "gui/{0}/{1}".format(os.getuid() if uid is None else uid, label)
-
-
-def parse_print_output(text: str) -> Dict[str, str]:
-    """Pull the ``PRINT_FIELDS`` out of ``launchctl print`` output.
-
-    The output is a nested brace dump of ``key = value`` lines whose exact
-    shape varies between macOS releases, so anything unrecognized is ignored
-    and only the first occurrence of each known key is kept.
-    """
-    found: Dict[str, str] = {}
-    for line in text.splitlines():
-        stripped = line.strip()
-        if "=" not in stripped or stripped.endswith("{"):
-            continue
-        key, _, value = stripped.partition("=")
-        key = key.strip().lower()
-        if key in PRINT_FIELDS and key not in found:
-            found[key] = value.strip()
-    return found
+    return "{0}/{1}".format(gui_domain(uid), label)
 
 
 def launchctl_print(
@@ -147,3 +108,80 @@ def launchctl_print(
         return parse_print_output(out)
     except Exception:
         return {}
+
+
+def invoke(args: Sequence[str], runner: Optional[Runner] = None) -> Completed:
+    """Run one launchctl subcommand and return (code, stdout, stderr).
+
+    Unlike the read-only helpers above this does not swallow failures: the
+    lifecycle layer turns them into messages via ``parse_error``.
+    """
+    run: Runner = runner or subprocess_runner
+    return run(build_argv(*args))
+
+
+def is_disabled(
+    label: str,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> bool:
+    """Ask launchd whether ``label`` sits in the per-user disabled list.
+
+    Read-only, and false whenever launchctl cannot answer: this only decides
+    whether an extra hint is printed.
+    """
+    try:
+        code, out, _err = invoke(["print-disabled", gui_domain(uid)], runner)
+    except LaunchctlError:
+        return False
+    return label in parse_disabled_output(out) if code == 0 else False
+
+
+def kickstart(
+    label: str,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+    restart: bool = False,
+) -> Completed:
+    """``launchctl kickstart [-k] gui/<uid>/<label>`` - run the job now."""
+    flags = ["-k"] if restart else []
+    return invoke(["kickstart"] + flags + [gui_target(label, uid)], runner)
+
+
+def send_signal(
+    label: str,
+    signal: str = TERM_SIGNAL,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> Completed:
+    """``launchctl kill <signal> gui/<uid>/<label>`` - signal the process."""
+    return invoke(["kill", signal, gui_target(label, uid)], runner)
+
+
+def bootstrap(
+    plist_path: str,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> Completed:
+    """``launchctl bootstrap gui/<uid> <plist>`` - load the job."""
+    return invoke(["bootstrap", gui_domain(uid), plist_path], runner)
+
+
+def bootout(
+    label: str,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> Completed:
+    """``launchctl bootout gui/<uid>/<label>`` - unload the job."""
+    return invoke(["bootout", gui_target(label, uid)], runner)
+
+
+def set_enabled(
+    label: str,
+    enabled: bool,
+    runner: Optional[Runner] = None,
+    uid: Optional[int] = None,
+) -> Completed:
+    """``launchctl enable|disable gui/<uid>/<label>`` - toggle loadability."""
+    verb = "enable" if enabled else "disable"
+    return invoke([verb, gui_target(label, uid)], runner)

@@ -136,6 +136,7 @@ def read_plist(path: str) -> JobRecord:
         state=STATE_UNLOADED,
         program=_program(data),
         raw_schedule_keys=[key for key in SCHEDULE_KEYS if key in data],
+        keep_alive=bool(data.get("KeepAlive")),
     )
 
 

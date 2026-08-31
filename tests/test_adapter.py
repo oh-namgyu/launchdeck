@@ -2,7 +2,12 @@
 
 from launchdeck import adapter
 
-from .conftest import SAMPLE_LIST_OUTPUT, SAMPLE_PRINT_OUTPUT, fake_runner
+from .conftest import (
+    SAMPLE_LIST_OUTPUT,
+    SAMPLE_PRINT_OUTPUT,
+    fake_runner,
+    spy_runner,
+)
 
 
 def test_parse_list_output():
@@ -95,3 +100,72 @@ def test_launchctl_print_targets_the_right_service():
 
     adapter.launchctl_print("com.example.running", spy, uid=501)
     assert seen == [[adapter.LAUNCHCTL, "print", "gui/501/com.example.running"]]
+
+
+def test_gui_domain_uses_the_given_uid():
+    assert adapter.gui_domain(uid=501) == "gui/501"
+
+
+def test_error_code_reads_the_launchd_errno():
+    assert adapter.error_code("Boot-out failed: 5: Input/output error") == 5
+    assert adapter.error_code("Load failed: 133: Service is disabled") == 133
+
+
+def test_error_code_is_none_without_an_errno():
+    assert adapter.error_code('Could not find service "com.x" in domain') is None
+
+
+def test_parse_error_explains_a_known_errno():
+    text = adapter.parse_error("Boot-out failed: 5: Input/output error\n", 5)
+    assert text.startswith("Boot-out failed: 5: Input/output error")
+    assert "already in that state" in text
+
+
+def test_parse_error_keeps_unknown_messages_verbatim_on_one_line():
+    text = adapter.parse_error('Could not find service\n  "com.x"\n', 113)
+    assert text == 'Could not find service "com.x"'
+
+
+def test_parse_error_falls_back_to_the_exit_status():
+    assert adapter.parse_error("", 64) == "launchctl exited with status 64"
+
+
+def test_says_disabled_matches_word_or_errno():
+    assert adapter.says_disabled("Load failed: 133: whatever")
+    assert adapter.says_disabled("Bootstrap failed: Service is disabled")
+    assert not adapter.says_disabled("Boot-out failed: 5: Input/output error")
+
+
+def test_parse_disabled_output_reads_both_wordings():
+    text = (
+        'disabled services = {\n'
+        '\t\t"com.example.off" => disabled\n'
+        '\t\t"com.example.old" => true\n'
+        '\t\t"com.example.on" => enabled\n'
+        '}\n'
+    )
+    assert adapter.parse_disabled_output(text) == {
+        "com.example.off",
+        "com.example.old",
+    }
+
+
+def test_is_disabled_queries_the_domain():
+    run = spy_runner(stdout='\t\t"com.example.off" => disabled\n')
+    assert adapter.is_disabled("com.example.off", run, uid=501) is True
+    assert run.calls == [[adapter.LAUNCHCTL, "print-disabled", "gui/501"]]
+
+
+def test_is_disabled_is_false_for_an_enabled_job():
+    run = spy_runner(stdout='\t\t"com.example.off" => disabled\n')
+    assert adapter.is_disabled("com.example.on", run, uid=501) is False
+
+
+def test_is_disabled_is_false_when_launchctl_fails():
+    assert adapter.is_disabled("com.example.x", spy_runner(code=1), uid=501) is False
+
+
+def test_invoke_passes_the_subcommand_through():
+    run = spy_runner()
+    assert adapter.invoke(["list"], run) == (0, "", "")
+    assert run.calls == [[adapter.LAUNCHCTL, "list"]]

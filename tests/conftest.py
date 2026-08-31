@@ -1,7 +1,7 @@
 """Shared fixtures. No test in this suite touches launchctl or the real home."""
 
 import plistlib
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import pytest
 
@@ -58,6 +58,22 @@ def fake_runner(stdout: str, code: int = 0):
     def run(argv: Sequence[str]) -> Tuple[int, str, str]:
         return code, stdout, ""
 
+    return run
+
+
+def spy_runner(code: int = 0, stdout: str = "", stderr: str = ""):
+    """Runner that records each argv it receives and returns a canned result.
+
+    The recorded calls hang off ``run.calls`` so a test can assert the exact
+    launchctl command line without any process ever being spawned.
+    """
+    calls: List[List[str]] = []
+
+    def run(argv: Sequence[str]) -> Tuple[int, str, str]:
+        calls.append(list(argv))
+        return code, stdout, stderr
+
+    run.calls = calls
     return run
 
 

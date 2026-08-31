@@ -36,6 +36,7 @@ class JobRecord:
     state: str = STATE_UNKNOWN
     program: List[str] = field(default_factory=list)
     raw_schedule_keys: List[str] = field(default_factory=list)
+    keep_alive: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the stable JSON contract v1 shape for a single job."""
@@ -49,6 +50,31 @@ class JobRecord:
             "stdout_path": self.stdout_path,
             "stderr_path": self.stderr_path,
             "state": self.state,
+        }
+
+
+@dataclass
+class ActionResult:
+    """Outcome of one lifecycle command: what to print and whether it worked.
+
+    ``changed`` is False for no-ops (nothing to stop, already loaded, ...),
+    which are successes: the requested end state already held.
+    """
+
+    action: str
+    label: str
+    ok: bool = True
+    changed: bool = True
+    lines: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the JSON contract shape for one lifecycle action."""
+        return {
+            "action": self.action,
+            "label": self.label,
+            "ok": self.ok,
+            "changed": self.changed,
+            "messages": list(self.lines),
         }
 
 
