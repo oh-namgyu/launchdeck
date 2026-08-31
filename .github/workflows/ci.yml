@@ -19,9 +19,11 @@ jobs:
         # The unit suite never invokes launchctl (the subprocess runner is
         # injectable), so these runners exercise real behaviour safely.
         include:
-          # macos-latest is arm64, where setup-python has no Python 3.9 build;
-          # macos-13 is the x86_64 runner that does.
-          - os: macos-13
+          # macos-latest is arm64, where setup-python has no Python 3.9 build,
+          # and GitHub retired the x86_64 macos-13 runners. The suite is
+          # plistlib + fakes with no real launchctl, so the 3.9 floor is
+          # exercised on Linux instead.
+          - os: ubuntu-latest
             python-version: "3.9"
           - os: macos-latest
             python-version: "3.12"
