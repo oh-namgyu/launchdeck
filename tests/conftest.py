@@ -1,5 +1,6 @@
 """Shared fixtures. No test in this suite touches launchctl or the real home."""
 
+import os
 import plistlib
 from typing import Any, Dict, List, Sequence, Tuple
 
@@ -38,7 +39,7 @@ SAMPLE_PRINT_OUTPUT = """gui/501/com.example.running = {
 
 def write_plist(directory: Any, filename: str, data: Dict[str, Any]) -> str:
     """Write an XML plist into ``directory`` and return its path."""
-    path = directory / filename
+    path = os.path.join(str(directory), filename)
     with open(str(path), "wb") as handle:
         plistlib.dump(data, handle, fmt=plistlib.FMT_XML)
     return str(path)
@@ -46,7 +47,7 @@ def write_plist(directory: Any, filename: str, data: Dict[str, Any]) -> str:
 
 def write_binary_plist(directory: Any, filename: str, data: Dict[str, Any]) -> str:
     """Write a binary plist into ``directory`` and return its path."""
-    path = directory / filename
+    path = os.path.join(str(directory), filename)
     with open(str(path), "wb") as handle:
         plistlib.dump(data, handle, fmt=plistlib.FMT_BINARY)
     return str(path)
@@ -86,6 +87,75 @@ def fake_launchctl(print_output: str = SAMPLE_PRINT_OUTPUT, print_code: int = 0)
         return 0, SAMPLE_LIST_OUTPUT, ""
 
     return run
+
+
+def label_of(path: str) -> str:
+    """The Label inside a plist file, falling back to its file name."""
+    fallback = os.path.basename(path)
+    fallback = fallback[: -len(".plist")] if fallback.endswith(".plist") else fallback
+    try:
+        with open(path, "rb") as handle:
+            data = plistlib.load(handle)
+        return data.get("Label") or fallback
+    except Exception:
+        return fallback
+
+
+class FakeLaunchd:
+    """A stand-in for launchctl and plutil that remembers what is loaded.
+
+    ``bootstrap``/``bootout``/``list`` stay consistent with each other, which
+    is what the transaction tests need: a rollback can be asserted on the
+    load state, not just on the files.
+    """
+
+    def __init__(self, loaded=(), disabled=(), lint_code=0, bootstrap_code=0, bootout_code=0):
+        self.loaded: Dict[str, Tuple[Any, int]] = {label: (None, 0) for label in loaded}
+        self.disabled = set(disabled)
+        self.lint_code = lint_code
+        self.bootstrap_code = bootstrap_code
+        self.bootout_code = bootout_code
+        self.calls: List[List[str]] = []
+
+    def __call__(self, argv: Sequence[str]) -> Tuple[int, str, str]:
+        self.calls.append(list(argv))
+        if argv[0].endswith("plutil"):
+            # plutil reports lint failures on stdout, like the real one.
+            said = "" if not self.lint_code else "{0}: garbage".format(argv[-1])
+            return self.lint_code, said, ""
+        verb = argv[1]
+        if verb == "list":
+            return 0, self.listing(), ""
+        if verb == "print-disabled":
+            rows = "".join('\t\t"{0}" => disabled\n'.format(l) for l in self.disabled)
+            return 0, "disabled services = {\n" + rows + "}\n", ""
+        if verb == "bootstrap":
+            return self._bootstrap(argv[3])
+        if verb == "bootout":
+            return self._bootout(argv[2].rsplit("/", 1)[-1])
+        return 0, "", ""
+
+    def listing(self) -> str:
+        rows = ["PID\tStatus\tLabel"]
+        rows += [
+            "{0}\t{1}\t{2}".format(pid if pid else "-", code, label)
+            for label, (pid, code) in sorted(self.loaded.items())
+        ]
+        return "\n".join(rows) + "\n"
+
+    def _bootstrap(self, path: str) -> Tuple[int, str, str]:
+        if not os.path.isfile(path):
+            return 113, "", "Bootstrap failed: 113: Could not find specified service"
+        if self.bootstrap_code:
+            return self.bootstrap_code, "", "Bootstrap failed: 5: Input/output error"
+        self.loaded[label_of(path)] = (None, 0)
+        return 0, "", ""
+
+    def _bootout(self, label: str) -> Tuple[int, str, str]:
+        if self.bootout_code:
+            return self.bootout_code, "", "Boot-out failed: 5: Input/output error"
+        self.loaded.pop(label, None)
+        return 0, "", ""
 
 
 @pytest.fixture

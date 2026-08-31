@@ -58,7 +58,9 @@ class ActionResult:
     """Outcome of one lifecycle command: what to print and whether it worked.
 
     ``changed`` is False for no-ops (nothing to stop, already loaded, ...),
-    which are successes: the requested end state already held.
+    which are successes: the requested end state already held. ``details``
+    carries command-specific keys (``plist_path``, ``backup_path``) straight
+    into the JSON contract.
     """
 
     action: str
@@ -66,16 +68,19 @@ class ActionResult:
     ok: bool = True
     changed: bool = True
     lines: List[str] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Return the JSON contract shape for one lifecycle action."""
-        return {
+        payload: Dict[str, Any] = {
             "action": self.action,
             "label": self.label,
             "ok": self.ok,
             "changed": self.changed,
             "messages": list(self.lines),
         }
+        payload.update(self.details)
+        return payload
 
 
 def derive_state(

@@ -5,9 +5,9 @@
 `~/Library/LaunchAgents`, overlays live state from `launchctl list`, and shows
 one table telling you what is running, idle, failing, or not loaded at all.
 
-> Work in progress. Inspection (`status`, `info`, `logs`) and the lifecycle
-> verbs are here. `install`/`uninstall` and `doctor` land in later stages, and
-> the full README arrives with them.
+> Work in progress. Inspection (`status`, `info`, `logs`), the lifecycle verbs
+> and `install`/`uninstall`/`restore` are here. `doctor` lands in the next
+> stage, and the full README arrives with it.
 
 ```console
 $ ldm status                  # one table: running / idle / failing / unloaded
@@ -36,6 +36,41 @@ sets `KeepAlive` prints a warning, because launchd will start it right back up;
 `ldm unload` is what keeps it down. Every verb takes a label, only labels found
 in `~/Library/LaunchAgents` are accepted, and no-ops (stopping something that
 is not running, loading something already loaded) exit 0.
+
+## Creating and removing jobs
+
+```console
+$ ldm install --label com.you.backup --cmd "/usr/bin/rsync -a ~/src /Volumes/bk" \
+      --interval 2h
+$ ldm install --label com.you.report --cmd "/bin/sh ~/bin/report.sh" \
+      --calendar "Mon 09:30" --log-dir ~/logs/report --run-at-load
+$ ldm uninstall com.you.backup     # backs the plist up first, then unloads it
+$ ldm restore com.you.backup       # newest backup back in place, and loaded
+```
+
+`--interval` takes `45s` / `30m` / `2h` / `1d`; `--calendar` takes `"09:30"`,
+`"daily 09:30"` or `"Mon 09:30"`. `--cmd` is split into `ProgramArguments` with
+`shlex` and handed to launchd as data - no shell ever sees it. Logs default to
+`~/Library/Logs/<label>/out.log` and `err.log`.
+
+All three are transactions, so a failure leaves the machine as it was:
+
+- **install** writes a temp file next to the target, validates it with
+  `plutil -lint`, moves it into place and bootstraps it. If the lint or the
+  bootstrap fails, the new plist is removed again. An existing label is refused
+  unless you pass `--force`, which uninstalls the old job first (backup
+  included) and puts it back - load state and all - if the new one fails.
+- **uninstall** copies the plist to `~/.local/share/ldm/backups/<UTC>/` before
+  it unloads the job, verifies launchd let go, and only then deletes the file.
+  A failure after the unload restores the file and loads it again. The backup
+  path is printed, and `LDM_BACKUP_DIR` moves the store elsewhere.
+- **restore** takes the newest backup for a label, refuses to overwrite an
+  existing plist without `--force`, and loads what it restored.
+
+One thing `ldm` cannot undo: `launchctl enable`/`disable` writes into a
+root-owned override database, and that row survives the job it belongs to.
+Uninstalling a disabled label says so in its output - re-install it later and
+you will need `ldm enable <label>` before launchd accepts it.
 
 Requires Python >= 3.9 and macOS. Verified on macOS 15 (Darwin 24).
 

@@ -1,4 +1,5 @@
-"""The only module that runs ``launchctl``.
+"""The only module that runs a subprocess - ``launchctl``, plus ``plutil``
+for validating a plist before it goes live.
 
 launchctl output differs between macOS releases, so every invocation lives
 here and every parser lives in ``parsing`` next door (re-exported below, so
@@ -28,6 +29,9 @@ Runner = Callable[[Sequence[str]], Tuple[int, str, str]]
 Completed = Tuple[int, str, str]
 
 LAUNCHCTL = "/bin/launchctl"
+
+# Apple's plist validator, used as the gate of the install transaction.
+PLUTIL = "/usr/bin/plutil"
 
 TERM_SIGNAL = "SIGTERM"
 
@@ -174,6 +178,15 @@ def bootout(
 ) -> Completed:
     """``launchctl bootout gui/<uid>/<label>`` - unload the job."""
     return invoke(["bootout", gui_target(label, uid)], runner)
+
+
+def plutil_lint(path: str, runner: Optional[Runner] = None) -> Completed:
+    """``plutil -lint <path>`` - is this file a plist launchd will accept?
+
+    plutil reports problems on stdout, so callers should show both streams.
+    """
+    run: Runner = runner or subprocess_runner
+    return run([PLUTIL, "-lint", path])
 
 
 def set_enabled(
