@@ -1,15 +1,13 @@
 # launchdeck
 
-> ## 한국어 요약
->
-> `launchdeck` 는 macOS 개인 LaunchAgent 를 관리하는 의존성 0 의 파이썬 CLI (`ldm`) 입니다.
+[![CI](https://github.com/oh-namgyu/launchdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/oh-namgyu/launchdeck/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> **한글 요약** — `launchdeck` 는 macOS 개인 LaunchAgent 를 관리하는 의존성 0 의 파이썬 CLI (`ldm`) 입니다.
 > `~/Library/LaunchAgents` 의 plist 를 읽고 `launchctl list` 의 실행 상태를 덧입혀,
 > 내 맥에서 무엇이 돌고 있고 무엇이 죽었는지를 표 하나로 보여줍니다.
 > 시작·중지·로그·설치·제거를 사람이 기억할 수 있는 동사로 제공하며, 쓰기 작업은 전부
 > 백업 우선 트랜잭션이라 실패하면 원래 상태로 되돌립니다. 아래 본문은 영어입니다.
-
-[![CI](https://github.com/oh-namgyu/launchdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/oh-namgyu/launchdeck/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **A zero-dependency Python CLI for your personal macOS LaunchAgents.**
 
@@ -336,4 +334,4 @@ to run anywhere, CI included.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Security policy: [SECURITY.md](SECURITY.md).
