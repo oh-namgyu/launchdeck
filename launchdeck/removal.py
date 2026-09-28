@@ -108,7 +108,7 @@ def uninstall(
         )
     try:
         backup = backups.save(record.label, path, backup_root)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return transaction.result(
             ACTION,
             record.label,

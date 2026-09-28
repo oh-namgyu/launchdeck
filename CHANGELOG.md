@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- The backup store refuses labels that are not plain file names. A plist on
+  disk whose `Label` contained `../` could previously make `uninstall` write its
+  backup outside the backup directory.
+
 ## [0.1.0] - 2026-08-31
 
 Initial release. A zero-dependency CLI (`ldm`) for personal macOS LaunchAgents,

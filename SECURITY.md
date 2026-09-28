@@ -51,6 +51,9 @@ be used to make `launchdeck` operate on a file elsewhere. `install` and
 refuse the `com.apple.*` namespace so a typo cannot shadow a system agent.
 Labels are validated against `[A-Za-z0-9][A-Za-z0-9.-]*`, which is stricter
 than launchd requires, because the label also becomes a file name.
+Labels read back from plists on disk are not held to that pattern (real ones
+contain `@`), so the backup store separately refuses any label that is empty,
+starts with `.` or contains a path separator before using it as a file name.
 
 **Destructive operations back up first.** `uninstall` copies the plist into
 `~/.local/share/ldm/backups/<UTC>/` before unloading anything, verifies launchd

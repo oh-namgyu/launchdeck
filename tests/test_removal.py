@@ -165,6 +165,20 @@ def test_a_backup_failure_stops_before_anything_changes(area, monkeypatch):
     assert LABEL in launchd.loaded
 
 
+def test_a_path_like_label_on_disk_is_refused_without_changes(area):
+    """A plist whose Label climbs out of the backup slot must not be backed up there."""
+    path = write_plist(
+        area.agents, "evil.plist", {"Label": "../evil", "ProgramArguments": ["/bin/true"]}
+    )
+    launchd = FakeLaunchd(loaded=["../evil"])
+    result = uninstall(area, launchd, JobRecord(label="../evil", plist_path=path))
+
+    assert not result.ok
+    assert "not a plain file name" in result.lines[0]
+    assert os.path.exists(path)
+    assert "../evil" in launchd.loaded
+
+
 def test_uninstall_only_ever_talks_to_launchctl_through_the_adapter(area):
     launchd = FakeLaunchd(loaded=[LABEL])
     uninstall(area, launchd, record(area, launchd))

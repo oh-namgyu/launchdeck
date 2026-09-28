@@ -1,5 +1,6 @@
 """Backup store tests: where copies go, and which one ``restore`` picks."""
 
+import pytest
 import os
 
 from launchdeck import backups
@@ -66,3 +67,27 @@ def test_newest_ignores_other_labels(tmp_path):
 def test_newest_of_an_empty_store_is_none(tmp_path):
     assert backups.newest("com.example.job", str(tmp_path / "missing")) is None
     assert backups.find("com.example.job", str(tmp_path / "missing")) == []
+
+
+@pytest.mark.parametrize("label", ["../escape", "a/b", "..", ".hidden", ""])
+def test_save_refuses_a_label_that_is_not_a_plain_file_name(tmp_path, label):
+    source = tmp_path / "job.plist"
+    source.write_bytes(b"x")
+    store = tmp_path / "store"
+    with pytest.raises(ValueError):
+        backups.save(label, str(source), str(store))
+    assert not (tmp_path / "escape.plist").exists()
+
+
+def test_find_of_a_path_like_label_is_empty(tmp_path):
+    (tmp_path / "outside.plist").write_bytes(b"x")
+    slot = tmp_path / "store" / "20260101T000000Z"
+    slot.mkdir(parents=True)
+    assert backups.find("../../outside", str(tmp_path / "store")) == []
+
+
+def test_save_keeps_real_world_labels_with_at_signs(tmp_path):
+    source = tmp_path / "job.plist"
+    source.write_bytes(b"x")
+    saved = backups.save("homebrew.mxcl.postgresql@14", str(source), str(tmp_path / "s"))
+    assert saved.endswith("homebrew.mxcl.postgresql@14.plist")

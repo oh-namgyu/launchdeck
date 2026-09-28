@@ -33,23 +33,38 @@ def _slot(base: str) -> str:
     return candidate
 
 
+def _file_name(label: str) -> str:
+    """``<label>.plist``, refusing labels that would leave the backup slot.
+
+    Labels scanned from disk are not run through ``spec.validate_label`` (real
+    ones contain ``@`` and such), so this only rejects path components.
+    """
+    if not label or label.startswith(".") or os.sep in label or (os.altsep and os.altsep in label):
+        raise ValueError("refusing backup label {0!r}: not a plain file name".format(label))
+    return "{0}.plist".format(label)
+
+
 def save(label: str, plist_path: str, path: Optional[str] = None) -> str:
     """Copy a plist into a new backup slot and return the copy's path."""
+    name = _file_name(label)
     slot = _slot(root(path))
     os.makedirs(slot, exist_ok=True)
-    destination = os.path.join(slot, "{0}.plist".format(label))
+    destination = os.path.join(slot, name)
     shutil.copy2(plist_path, destination)
     return destination
 
 
 def find(label: str, path: Optional[str] = None) -> List[str]:
     """List every backup of ``label``, oldest first (slot names sort by time)."""
+    try:
+        name = _file_name(label)
+    except ValueError:
+        return []
     base = root(path)
     try:
         slots = sorted(os.listdir(base))
     except OSError:
         return []
-    name = "{0}.plist".format(label)
     found = [os.path.join(base, slot, name) for slot in slots]
     return [candidate for candidate in found if os.path.isfile(candidate)]
 
