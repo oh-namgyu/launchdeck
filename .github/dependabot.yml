@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # The workflow pins actions by major version; this keeps them current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+
+  # launchdeck has no runtime dependencies, so this only ever moves the dev
+  # extra (pytest). It stays enabled so that changes here are noticed.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+    labels:
+      - dependencies
