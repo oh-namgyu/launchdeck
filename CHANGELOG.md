@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-16
+
 ### Security
 
 - The backup store refuses labels that are not plain file names. A plist on
@@ -59,4 +61,4 @@ covering inspection, lifecycle, provisioning and health checks.
 - Colored TTY output honouring `NO_COLOR`.
 - 312 unit tests that never invoke `launchctl`.
 
-[0.1.0]: https://github.com/oh-namgyu/launchdeck/releases/tag/v0.1.0
+[0.1.1]: https://github.com/oh-namgyu/launchdeck/releases/tag/v0.1.1
